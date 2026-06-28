@@ -65,6 +65,22 @@ JSON file format (all fields optional):
 
 ## Docker
 
+`docker-compose.yml`
+```yaml
+services:
+  proxy:
+    image: ghcr.io/cinkafox/robusttrafficproxy:master
+    ports:
+      - "12121:12121/udp"
+      - "12121:12121/tcp"
+    environment:
+      - TARGET_HOST=gameserver
+      - TARGET_PORT=1212
+    command: ["-l", "0.0.0.0:12121", "--tcp-listen", "0.0.0.0:12121", "-t", "${TARGET_HOST:-gameserver}:${TARGET_PORT:-1212}"]
+    restart: unless-stopped
+
+```
+
 ```bash
 docker-compose up -d
 ```
