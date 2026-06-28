@@ -125,97 +125,59 @@ public sealed class TcpProxyEngine
     {
         var buffer = new byte[81920];
         var canRewrite = dir == "s2c";
+        
         while (!ct.IsCancellationRequested)
         {
             var read = await source.ReadAsync(buffer, ct);
             if (read == 0) break;
-
+            
             if (canRewrite)
             {
                 canRewrite = false;
-                if (TryRewriteConnectAddress(buffer.AsMemory(0, read), out var rewritten))
-                {
-                    await destination.WriteAsync(rewritten, ct);
-                    _metrics.TcpBytesForwarded(dir, rewritten.Length);
-                    continue;
-                }
+                TryRewriteConnectAddress(ref buffer);
             }
-
+            
             await destination.WriteAsync(buffer.AsMemory(0, read), ct);
             _metrics.TcpBytesForwarded(dir, read);
         }
     }
-
-    private bool TryRewriteConnectAddress(ReadOnlyMemory<byte> data, out byte[] rewritten)
+    
+    private bool TryRewriteConnectAddress(ref byte[] data)
     {
-        rewritten = [];
-        var text = Encoding.UTF8.GetString(data.Span);
+        var key = "\"connect_address\""u8; 
+        Span<byte> span = data; 
 
-        if (!text.Contains("\"connect_address\"", StringComparison.Ordinal))
+        var keyIdx = span.IndexOf(key);
+        if (keyIdx == -1)
             return false;
 
-        var headerEnd = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-        if (headerEnd < 0) return false;
+        var idx = keyIdx + key.Length;
+        
+        while (idx < span.Length && span[idx] == (byte)' ') idx++;
+        if (idx >= span.Length || span[idx] != (byte)':') return false;
+        idx++;
+        
+        while (idx < span.Length && span[idx] == (byte)' ') idx++;
+        if (idx >= span.Length || span[idx] != (byte)'"') return false;
+        idx++; 
 
-        var headerStr = text.AsSpan(0, headerEnd);
-        var contentLength = -1;
-        foreach (var line in headerStr.ToString().Split("\r\n"))
+        var endIdx = idx;
+        
+        while (idx < span.Length)
         {
-            if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)
-                && int.TryParse(line["Content-Length:".Length..].Trim(), out var cl))
-            {
-                contentLength = cl;
+            var current = span[idx];
+            span[idx] = (byte)' ';
+            idx++;
+        
+            if (current == (byte)'"')
                 break;
-            }
         }
-        if (contentLength < 0) return false;
-
-        var bodyStart = headerEnd + 4;
-        if (bodyStart + contentLength > text.Length)
-            return false;
-
-        var body = text.AsSpan(bodyStart, contentLength);
-
-        var addrKey = "\"connect_address\":\"";
-        var addrIdx = body.IndexOf(addrKey, StringComparison.Ordinal);
-        if (addrIdx < 0)
+        
+        if (endIdx < span.Length)
         {
-            addrKey = "\"connect_address\": \"";
-            addrIdx = body.IndexOf(addrKey, StringComparison.Ordinal);
-            if (addrIdx < 0) return false;
+            span[endIdx] = (byte)'"';
         }
 
-        var valStart = addrIdx + addrKey.Length;
-        var valEnd = body[valStart..].IndexOf('\"');
-        if (valEnd < 0) return false;
-
-        var oldVal = body.Slice(valStart, valEnd).ToString();
-        var addr = _config.AdvertisedAddress ?? _config.ListenEndpoint.ToString();
-        var newVal = $"udp://{addr}";
-
-        if (oldVal == newVal)
-            return false;
-
-        var newBody = string.Concat(
-            body[..valStart].ToString(),
-            newVal,
-            body[(valStart + valEnd + 1)..].ToString()
-        );
-        var newBodyBytes = Encoding.UTF8.GetBytes(newBody);
-
-        var newHeaders = new StringBuilder();
-        foreach (var line in headerStr.ToString().Split("\r\n"))
-        {
-            if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
-                newHeaders.Append("Content-Length: ").Append(newBodyBytes.Length);
-            else
-                newHeaders.Append(line);
-            newHeaders.Append("\r\n");
-        }
-        newHeaders.Append("\r\n");
-
-        var headerBytes = Encoding.ASCII.GetBytes(newHeaders.ToString());
-        rewritten = [.. headerBytes, .. newBodyBytes];
         return true;
     }
 

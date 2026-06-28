@@ -5,7 +5,7 @@ using RobustTrafficProxy;
 var config = ParseArgs(args);
 
 var proxy = new ProxyEngine(config);
-TcpProxyEngine? tcpProxy = config.TcpListenEnabled
+var tcpProxy = config.TcpListenEnabled
     ? new TcpProxyEngine(config, proxy.Metrics, proxy.Filter)
     : null;
 
@@ -41,10 +41,6 @@ static ProxyConfig ParseArgs(string[] args)
             case "-t":
                 config = config with { TargetEndpoint = ParseEndpoint(GetArgValue(ref i, args), 1212) };
                 break;
-            case "--advertised-address":
-            case "-aa":
-                config = config with { AdvertisedAddress = GetArgValue(ref i, args) };
-                break;
             case "--config":
             case "-c":
             {
@@ -63,7 +59,6 @@ static ProxyConfig ParseArgs(string[] args)
                         MetricsPort = config.MetricsPort > 0 ? config.MetricsPort : fileConfig.MetricsPort,
                         Verbose = fileConfig.Verbose,
                         TcpListenEnabled = config.TcpListenEnabled || fileConfig.TcpListenEnabled,
-                        AdvertisedAddress = config.AdvertisedAddress ?? fileConfig.AdvertisedAddress,
                     };
                 }
                 break;
@@ -183,9 +178,8 @@ Examples:
 
 public record ProxyConfig
 {
-    public IPEndPoint         ListenEndpoint { get; init; } = new(IPAddress.Any, 12121);
+    public IPEndPoint ListenEndpoint { get; init; } = new(IPAddress.Any, 12121);
     public IPEndPoint TargetEndpoint { get; init; } = new(IPAddress.Loopback, 1212);
-    public string? AdvertisedAddress { get; init; }
     public List<string> AllowedIPs { get; init; } = [];
     public List<string> DeniedIPs { get; init; } = [];
     public int RateLimitPerClient { get; init; }
