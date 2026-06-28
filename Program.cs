@@ -4,13 +4,21 @@ using System.Text.Json;
 var config = ParseArgs(args);
 
 var proxy = new ProxyEngine(config);
+TcpProxyEngine? tcpProxy = config.TcpListenEnabled
+    ? new TcpProxyEngine(config, proxy.Metrics, proxy.Filter)
+    : null;
+
 Console.CancelKeyPress += (_, _) =>
 {
     Console.WriteLine("\n[Proxy] Shutting down...");
     proxy.Stop();
+    tcpProxy?.Stop();
 };
 
-await proxy.RunAsync();
+var udpTask = proxy.RunAsync();
+var tcpTask = tcpProxy?.RunAsync() ?? Task.CompletedTask;
+
+await Task.WhenAll(udpTask, tcpTask);
 
 static ProxyConfig ParseArgs(string[] args)
 {
@@ -23,6 +31,10 @@ static ProxyConfig ParseArgs(string[] args)
             case "--listen":
             case "-l":
                 config = config with { ListenEndpoint = ParseEndpoint(GetArgValue(ref i, args), 12121) };
+                break;
+            case "--tcp-listen":
+            case "--tl":
+                config = config with { TcpListenEnabled = true};
                 break;
             case "--target":
             case "-t":
@@ -45,6 +57,7 @@ static ProxyConfig ParseArgs(string[] args)
                         SessionTimeoutSeconds = fileConfig.SessionTimeoutSeconds,
                         MetricsPort = config.MetricsPort > 0 ? config.MetricsPort : fileConfig.MetricsPort,
                         Verbose = fileConfig.Verbose,
+                        TcpListenEnabled = config.TcpListenEnabled || fileConfig.TcpListenEnabled,
                     };
                 }
                 break;
@@ -141,8 +154,9 @@ Game Traffic Proxy for RobustToolbox/Lidgren
 Usage: GameTrafficProxy [options]
 
 Options:
-  -l, --listen <endpoint>     Address:port to listen on (default: 0.0.0.0:12121)
+  -l, --listen <endpoint>     UDP listen address:port (default: 0.0.0.0:12121)
   -t, --target <endpoint>     Target server address:port (default: 127.0.0.1:1212)
+      --tcp-listen <endpoint> Enable TCP relay on address:port (default: 0.0.0.0:12121)
   -c, --config <path>         JSON config file
   -a, --allow-list <path>     File with allowed IPs/CIDRs (one per line)
   -d, --deny-list <path>      File with denied IPs/CIDRs (one per line)
@@ -171,4 +185,5 @@ public record ProxyConfig
     public int SessionTimeoutSeconds { get; init; } = 60;
     public int MetricsPort { get; init; }
     public bool Verbose { get; init; }
+    public bool TcpListenEnabled { get; init; }
 }

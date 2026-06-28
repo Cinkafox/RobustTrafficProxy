@@ -34,6 +34,23 @@ public sealed class MetricsService : IDisposable
         "proxy_filter_denials_total",
         "Total connections denied by IP filter");
 
+    public readonly Counter TcpConnectionsTotal = Metrics.CreateCounter(
+        "proxy_tcp_connections_total",
+        "Total TCP connections established");
+
+    public readonly Gauge TcpConnectionsActive = Metrics.CreateGauge(
+        "proxy_tcp_connections_active",
+        "Current active TCP connections");
+
+    public readonly Counter TcpBytesTotal = Metrics.CreateCounter(
+        "proxy_tcp_bytes_total",
+        "Total TCP bytes relayed",
+        new CounterConfiguration { LabelNames = ["dir"] });
+
+    public readonly Counter TcpErrorsTotal = Metrics.CreateCounter(
+        "proxy_tcp_errors_total",
+        "Total TCP proxy errors");
+
     public MetricsService(int port)
     {
         if (port <= 0)
@@ -104,6 +121,11 @@ public sealed class MetricsService : IDisposable
             ["timeout", "max_clients"], "reason");
         AppendGauge0(sb, ActiveSessions, "proxy_active_sessions", "Current number of active client sessions");
         AppendCounter0(sb, FilterDenialsTotal, "proxy_filter_denials_total", "Total connections denied by IP filter");
+        AppendCounter0(sb, TcpConnectionsTotal, "proxy_tcp_connections_total", "Total TCP connections established");
+        AppendGauge0(sb, TcpConnectionsActive, "proxy_tcp_connections_active", "Current active TCP connections");
+        AppendCounter1(sb, TcpBytesTotal, "proxy_tcp_bytes_total", "Total TCP bytes relayed",
+            ["c2s", "s2c"], "dir");
+        AppendCounter0(sb, TcpErrorsTotal, "proxy_tcp_errors_total", "Total TCP proxy errors");
 
         return sb.ToString();
     }
@@ -170,6 +192,27 @@ public sealed class MetricsService : IDisposable
     public void FilterDenial()
     {
         FilterDenialsTotal.Inc();
+    }
+
+    public void TcpConnectionEstablished()
+    {
+        TcpConnectionsTotal.Inc();
+        TcpConnectionsActive.Inc();
+    }
+
+    public void TcpConnectionClosed()
+    {
+        TcpConnectionsActive.Dec();
+    }
+
+    public void TcpBytesForwarded(string dir, int bytes)
+    {
+        TcpBytesTotal.WithLabels(dir).Inc(bytes);
+    }
+
+    public void TcpConnectionError()
+    {
+        TcpErrorsTotal.Inc();
     }
 
     public void Dispose()

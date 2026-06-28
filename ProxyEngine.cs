@@ -7,6 +7,7 @@ public sealed class ProxyEngine
 {
     private readonly ProxyConfig _config;
     private readonly FilterEngine _filter;
+    public FilterEngine Filter => _filter;
     public readonly MetricsService Metrics;
     private readonly ConcurrentDictionary<EndPoint, ClientSession> _sessions = new();
     private readonly ConcurrentDictionary<int, ClientSession> _upstreamByPort = new();
@@ -65,40 +66,26 @@ public sealed class ProxyEngine
 
     private async Task ListenLoopAsync(CancellationToken ct)
     {
+        var workerCount = Math.Max(1, Environment.ProcessorCount);
+        var workers = new Task[workerCount];
+        for (var i = 0; i < workerCount; i++)
+        {
+            workers[i] = ListenWorkerAsync(ct);
+        }
+        await Task.WhenAll(workers);
+    }
+
+    private async Task ListenWorkerAsync(CancellationToken ct)
+    {
         var buffer = GC.AllocateUninitializedArray<byte>(ushort.MaxValue);
         var remoteEp = new IPEndPoint(IPAddress.Any, 0) as EndPoint;
-        var recvFromArgs = new SocketAsyncEventArgs { RemoteEndPoint = remoteEp };
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 var (data, length, sourceEp) = await ReceiveFromAsync(_listenSocket!, buffer, remoteEp, ct);
-
-                var sourceIp = ((IPEndPoint)sourceEp).Address;
-
-                if (_sessions.TryGetValue(sourceEp, out var existing))
-                {
-                    existing.LastActivity = Stopwatch.GetTimestamp();
-                    if (!_filter.CheckRateLimit(sourceIp))
-                    {
-                        Metrics.PacketDropped("c2s");
-                        if (_config.Verbose)
-                            Console.WriteLine($"[DROP] rate limit {sourceEp}");
-                        continue;
-                    }
-
-                    await existing.UpstreamSocket.SendToAsync(
-                        data.AsMemory(0, length), SocketFlags.None, _config.TargetEndpoint, ct);
-
-                    Metrics.PacketForwarded("c2s", length);
-                    if (_config.Verbose)
-                        Console.WriteLine($"[FWD] {sourceEp} -> server ({length} bytes)");
-                }
-                else
-                {
-                    await HandleNewClientAsync(sourceEp, data, firstLength: length, ct);
-                }
+                await HandlePacketAsync(data, length, sourceEp, ct);
             }
             catch (OperationCanceledException)
             {
@@ -108,10 +95,42 @@ public sealed class ProxyEngine
             {
                 // Ignore ICMP unreachable from upstream
             }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Listen loop: {ex.Message}");
+                Console.WriteLine($"[ERROR] Listen worker: {ex.Message}");
             }
+        }
+    }
+
+    private async Task HandlePacketAsync(byte[] data, int length, EndPoint sourceEp, CancellationToken ct)
+    {
+        var sourceIp = ((IPEndPoint)sourceEp).Address;
+
+        if (_sessions.TryGetValue(sourceEp, out var existing))
+        {
+            existing.LastActivity = Stopwatch.GetTimestamp();
+            if (!_filter.CheckRateLimit(sourceIp))
+            {
+                Metrics.PacketDropped("c2s");
+                if (_config.Verbose)
+                    Console.WriteLine($"[DROP] rate limit {sourceEp}");
+                return;
+            }
+
+            await existing.UpstreamSocket.SendToAsync(
+                data.AsMemory(0, length), SocketFlags.None, _config.TargetEndpoint, ct);
+
+            Metrics.PacketForwarded("c2s", length);
+            if (_config.Verbose)
+                Console.WriteLine($"[FWD] {sourceEp} -> server ({length} bytes)");
+        }
+        else
+        {
+            await HandleNewClientAsync(sourceEp, data, firstLength: length, ct);
         }
     }
 
@@ -177,6 +196,13 @@ public sealed class ProxyEngine
         if (!_sessions.TryAdd(clientEp, session))
         {
             upstream.Dispose();
+            // Another worker already created this session; forward through it
+            if (_sessions.TryGetValue(clientEp, out var existingSession))
+            {
+                await existingSession.UpstreamSocket.SendToAsync(
+                    firstPacket.AsMemory(0, firstLength), SocketFlags.None, _config.TargetEndpoint, ct);
+                Metrics.PacketForwarded("c2s", firstLength);
+            }
             return;
         }
         _upstreamByPort[localPort] = session;
