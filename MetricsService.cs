@@ -2,6 +2,8 @@ using System.Net.Sockets;
 using System.Text;
 using Prometheus;
 
+namespace RobustTrafficProxy;
+
 public sealed class MetricsService : IDisposable
 {
     private readonly TcpListener? _listener;

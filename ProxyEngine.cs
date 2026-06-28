@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
+namespace RobustTrafficProxy;
+
 public sealed class ProxyEngine
 {
     private readonly ProxyConfig _config;

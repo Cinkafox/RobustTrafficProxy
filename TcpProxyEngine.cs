@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
 
+namespace RobustTrafficProxy;
+
 public sealed class TcpProxyEngine
 {
     private readonly ProxyConfig _config;

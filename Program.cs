@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Text.Json;
+using RobustTrafficProxy;
 
 var config = ParseArgs(args);
 
@@ -34,7 +35,7 @@ static ProxyConfig ParseArgs(string[] args)
                 break;
             case "--tcp-listen":
             case "--tl":
-                config = config with { TcpListenEnabled = true};
+                config = config with { TcpListenEnabled = bool.Parse(GetArgValue(ref i, args))};
                 break;
             case "--target":
             case "-t":
@@ -185,5 +186,5 @@ public record ProxyConfig
     public int SessionTimeoutSeconds { get; init; } = 60;
     public int MetricsPort { get; init; }
     public bool Verbose { get; init; }
-    public bool TcpListenEnabled { get; init; }
+    public bool TcpListenEnabled { get; init; } = true;
 }

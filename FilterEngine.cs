@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
+namespace RobustTrafficProxy;
+
 public sealed class FilterEngine
 {
     private readonly List<IPNetwork> _allowedNetworks = [];
