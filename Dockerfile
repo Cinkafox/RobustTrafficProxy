@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
-COPY GameTrafficProxy.csproj .
+COPY RobustTrafficProxy.csproj .
 RUN dotnet restore
 COPY . .
 RUN dotnet publish -c Release -o /app
@@ -10,4 +10,4 @@ WORKDIR /app
 COPY --from=build /app .
 EXPOSE 12121/udp
 EXPOSE 12121/tcp
-ENTRYPOINT ["dotnet", "GameTrafficProxy.dll"]
+ENTRYPOINT ["dotnet", "RobustTrafficProxy.dll"]
