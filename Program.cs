@@ -41,6 +41,10 @@ static ProxyConfig ParseArgs(string[] args)
             case "-t":
                 config = config with { TargetEndpoint = ParseEndpoint(GetArgValue(ref i, args), 1212) };
                 break;
+            case "--advertised-address":
+            case "-aa":
+                config = config with { AdvertisedAddress = GetArgValue(ref i, args) };
+                break;
             case "--config":
             case "-c":
             {
@@ -59,6 +63,7 @@ static ProxyConfig ParseArgs(string[] args)
                         MetricsPort = config.MetricsPort > 0 ? config.MetricsPort : fileConfig.MetricsPort,
                         Verbose = fileConfig.Verbose,
                         TcpListenEnabled = config.TcpListenEnabled || fileConfig.TcpListenEnabled,
+                        AdvertisedAddress = config.AdvertisedAddress ?? fileConfig.AdvertisedAddress,
                     };
                 }
                 break;
@@ -157,6 +162,7 @@ Usage: GameTrafficProxy [options]
 Options:
   -l, --listen <endpoint>     UDP listen address:port (default: 0.0.0.0:12121)
   -t, --target <endpoint>     Target server address:port (default: 127.0.0.1:1212)
+  -aa,--advertised-address   Public address:port advertised to clients in /info (default: listen address)
       --tcp-listen <endpoint> Enable TCP relay on address:port (default: 0.0.0.0:12121)
   -c, --config <path>         JSON config file
   -a, --allow-list <path>     File with allowed IPs/CIDRs (one per line)
@@ -177,8 +183,9 @@ Examples:
 
 public record ProxyConfig
 {
-    public IPEndPoint ListenEndpoint { get; init; } = new(IPAddress.Any, 12121);
+    public IPEndPoint         ListenEndpoint { get; init; } = new(IPAddress.Any, 12121);
     public IPEndPoint TargetEndpoint { get; init; } = new(IPAddress.Loopback, 1212);
+    public string? AdvertisedAddress { get; init; }
     public List<string> AllowedIPs { get; init; } = [];
     public List<string> DeniedIPs { get; init; } = [];
     public int RateLimitPerClient { get; init; }

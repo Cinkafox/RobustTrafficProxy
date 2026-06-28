@@ -12,6 +12,7 @@ UDP/TCP proxy for [RobustToolbox](https://github.com/space-wizards/RobustToolbox
 - **Prometheus metrics** — built-in HTTP endpoint exposing packet/connection/byte counters
 - **Concurrent** — multi-worker UDP receive loop, configurable max clients
 - **Docker** — ready-to-use container image and docker-compose
+- **`/info` rewriting** — automatically rewrites `connect_address` in game server `/info` JSON responses to point clients to the proxy
 
 ## Usage
 
@@ -19,18 +20,19 @@ UDP/TCP proxy for [RobustToolbox](https://github.com/space-wizards/RobustToolbox
 GameTrafficProxy [options]
 
 Options:
-  -l, --listen <endpoint>       UDP listen address:port (default: 0.0.0.0:12121)
-  -t, --target <endpoint>       Target server address:port (default: 127.0.0.1:1212)
-      --tcp-listen <boolean>   Enable TCP relay on address:port (default: 0.0.0.0:12121)
-  -c, --config <path>           JSON config file
-  -a, --allow-list <path>       File with allowed IPs/CIDRs (one per line)
-  -d, --deny-list <path>        File with denied IPs/CIDRs (one per line)
-  -r, --rate-limit <n>          Max packets/sec per client (0 = unlimited)
-      --max-clients <n>         Maximum concurrent clients (default: 256)
-      --session-timeout <s>     Seconds idle before dropping session (default: 60)
-      --metrics-port <port>     Prometheus metrics HTTP port (0 = disabled)
-  -v, --verbose                 Log all forwarded packets
-  -h, --help                    Show help
+  -l, --listen <endpoint>         UDP listen address:port (default: 0.0.0.0:12121)
+  -t, --target <endpoint>         Target server address:port (default: 127.0.0.1:1212)
+  -aa,--advertised-address <addr> Public address:port advertised in /info (default: listen address)
+      --tcp-listen <boolean>      Enable TCP relay on address:port (default: 0.0.0.0:12121)
+  -c, --config <path>             JSON config file
+  -a, --allow-list <path>         File with allowed IPs/CIDRs (one per line)
+  -d, --deny-list <path>          File with denied IPs/CIDRs (one per line)
+  -r, --rate-limit <n>            Max packets/sec per client (0 = unlimited)
+      --max-clients <n>           Maximum concurrent clients (default: 256)
+      --session-timeout <s>       Seconds idle before dropping session (default: 60)
+      --metrics-port <port>       Prometheus metrics HTTP port (0 = disabled)
+  -v, --verbose                   Log all forwarded packets
+  -h, --help                      Show help
 ```
 
 ### Examples
@@ -44,6 +46,9 @@ GameTrafficProxy -c config.json --metrics-port 9090 -v
 
 # Apply allowlist/denylist with rate limit of 100 pkt/s per client
 GameTrafficProxy -a allowlist.txt -d denylist.txt -r 100
+
+# Under Docker, advertise the public address so clients connect to the proxy
+GameTrafficProxy -l 0.0.0.0:12121 -t 192.168.1.10:1212 -aa game.example.com:12121
 ```
 
 ## Configuration File
@@ -59,7 +64,8 @@ JSON file format (all fields optional):
   "SessionTimeoutSeconds": 120,
   "MetricsPort": 9090,
   "Verbose": true,
-  "TcpListenEnabled": true
+  "TcpListenEnabled": true,
+  "AdvertisedAddress": "game.example.com:12121"
 }
 ```
 
@@ -76,7 +82,7 @@ services:
     environment:
       - TARGET_HOST=gameserver
       - TARGET_PORT=1212
-    command: ["-l", "0.0.0.0:12121", "-t", "${TARGET_HOST:-gameserver}:${TARGET_PORT:-1212}"]
+    command: ["-l", "0.0.0.0:12121", "-t", "${TARGET_HOST:-gameserver}:${TARGET_PORT:-1212}", "-aa", "${PUBLIC_ADDRESS:-0.0.0.0:12121}"]
     restart: unless-stopped
 
 ```
